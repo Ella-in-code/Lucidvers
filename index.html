@@ -1,234 +1,228 @@
 <!DOCTYPE html>
 <html lang="en">
 <head>
-  <meta charset="UTF-8" />
-  <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>Voice Controlled 3D Scene</title>
-  <script src="https://aframe.io/releases/1.5.0/aframe.min.js"></script>
-
-  <style>
-    body {
-      margin: 0;
-      overflow: hidden;
-      font-family: "Poppins", sans-serif;
-      background: linear-gradient(135deg, #4b0082, #6a0dad, #9370db);
-      color: white;
-      text-align: center;
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Dynamic Day/Night Voice-Controlled 3D Scene</title>
+<script src="https://aframe.io/releases/1.5.0/aframe.min.js"></script>
+<script>
+// 🌞 DAY-NIGHT CYCLE COMPONENT
+AFRAME.registerComponent('day-night-cycle', {
+  schema: { duration: { type: 'number', default: 60 }, enabled: { type: 'boolean', default: false } },
+  init: function () {
+    this.sun = document.getElementById('sun');
+    this.sky = document.getElementById('sky');
+    this.light = document.getElementById('scene-light');
+    this.cycleAnimation = {
+      property: 'rotation',
+      to: '0 360 0',
+      loop: true,
+      dur: this.data.duration * 1000,
+      easing: 'linear'
+    };
+  },
+  tick: function () {
+    if (!this.data.enabled) return;
+    const rotation = this.el.object3D.rotation;
+    const alt = (Math.cos(rotation.x) + 1) / 2;
+    let skyColor, lightIntensity, sunColor;
+    if (alt > 0.9) {
+      skyColor = '#87CEEB'; lightIntensity = 1.0; sunColor = '#FFD700';
+    } else if (alt > 0.3) {
+      skyColor = `rgb(${Math.round(135 + 120 * alt)}, ${Math.round(206 + 50 * alt)}, 235)`;
+      lightIntensity = 0.8; sunColor = '#FFD700';
+    } else if (alt > 0) {
+      skyColor = `rgb(255, ${Math.round(90 + 120 * alt)}, ${Math.round(0 + 100 * alt)})`;
+      lightIntensity = 0.5; sunColor = '#FFA07A';
+    } else {
+      skyColor = '#000033'; lightIntensity = 0.1; sunColor = '#FFFFFF';
     }
-
-    /* 🌄 START PAGE STYLES */
-    #home-screen {
-      position: absolute;
-      top: 0;
-      left: 0;
-      width: 100%;
-      height: 100vh;
-      display: flex;
-      flex-direction: column;
-      justify-content: center;
-      align-items: center;
-      background: linear-gradient(135deg, #4b0082, #6a0dad, #9370db);
-      color: #fff;
-      z-index: 10;
-      transition: opacity 1s ease;
+    this.sky.setAttribute('color', skyColor);
+    this.light.setAttribute('light', 'intensity', lightIntensity);
+    this.sun.setAttribute('color', sunColor);
+  },
+  update: function (oldData) {
+    if (this.data.enabled !== oldData.enabled) {
+      if (this.data.enabled) this.el.setAttribute('animation', this.cycleAnimation);
+      else {
+        this.el.removeAttribute('animation');
+        this.sky.setAttribute('color', '#87CEEB');
+        this.light.setAttribute('light', 'intensity', 0.8);
+        this.sun.setAttribute('color', '#FFD700');
+      }
     }
+  }
+});
 
-    #home-screen img {
-      width: 300px;
-      border-radius: 12px;
-      box-shadow: 0 6px 20px rgba(0,0,0,0.3);
-      margin-bottom: 20px;
-    }
+// 🌊 CURVED RIVER COMPONENT
+AFRAME.registerComponent('curved-river', {
+  schema: {
+    length: { type: 'number', default: 40 },
+    width: { type: 'number', default: 1.5 }
+  },
+  init: function () {
+    const riverGroup = document.createElement('a-entity');
+    const segments = 20; // Number of curve segments
+    const amplitude = 6; // Side-to-side wave width
+    const spacing = this.data.length / segments;
 
-    #home-screen h1 {
-      font-size: 2.5rem;
-      margin: 10px 0;
-      letter-spacing: 1px;
+    for (let i = 0; i < segments; i++) {
+      const z = -i * spacing;
+      const x = Math.sin(i * 0.6) * amplitude;
+      const piece = document.createElement('a-plane');
+      piece.setAttribute('width', this.data.width);
+      piece.setAttribute('height', spacing + 0.5);
+      piece.setAttribute('rotation', '-90 0 0');
+      piece.setAttribute('position', `${x} 0.01 ${z}`);
+      piece.setAttribute('material', 'color: #4682B4; opacity: 0.8; metalness: 0.1; roughness: 0.3; transparent: true;');
+      piece.setAttribute('animation__flow', {
+        property: 'material.opacity',
+        dir: 'alternate',
+        from: 0.7,
+        to: 0.9,
+        loop: true,
+        dur: 3000,
+        easing: 'easeInOutSine'
+      });
+      riverGroup.appendChild(piece);
     }
+    this.el.appendChild(riverGroup);
+  }
+});
+</script>
 
-    #home-screen p {
-      font-size: 1.2rem;
-      max-width: 500px;
-      margin-bottom: 30px;
-      line-height: 1.4;
-    }
-
-    #start-btn {
-      padding: 15px 40px;
-      font-size: 1.2rem;
-      font-weight: bold;
-      color: white;
-      background: #8537d8;
-      border: none;
-      border-radius: 10px;
-      cursor: pointer;
-      transition: background 0.3s, transform 0.1s;
-      box-shadow: 0 4px 8px rgba(0,0,0,0.2);
-    }
-
-    #start-btn:hover {
-      background: #6a1bd3;
-      transform: scale(1.05);
-    }
-
-    /* 🎙️ VOICE CONTROLS */
-    #voice-controls {
-      position: fixed;
-      bottom: 20px;
-      left: 50%;
-      transform: translateX(-50%);
-      text-align: center;
-      z-index: 5;
-      display: none;
-    }
-
-    #speak-btn {
-      padding: 15px 30px;
-      font-size: 1.2rem;
-      font-weight: bold;
-      color: rgb(195, 166, 223);
-      background-color: #8537d8;
-      border: none;
-      border-radius: 8px;
-      cursor: pointer;
-      transition: background 0.3s, transform 0.1s;
-    }
-
-    #speak-btn:hover {
-      background-color: #65a9ed;
-    }
-
-    #speak-btn.listening {
-      background-color: #da6161;
-      animation: pulse 1s infinite alternate;
-    }
-
-    #status {
-      margin-top: 10px;
-      color: rgb(248, 50, 221);
-      background-color: rgba(0, 0, 0, 0.5);
-      padding: 6px 10px;
-      border-radius: 4px;
-    }
-
-    @keyframes pulse {
-      from { box-shadow: 0 0 0 0 rgba(215, 73, 63, 0.7); }
-      to { box-shadow: 0 0 0 10px rgba(244,67,54,0); }
-    }
-
-    /* Hide the scene initially */
-    a-scene {
-      display: none;
-    }
-  </style>
+<style>
+body {
+  margin: 0;
+  overflow: hidden;
+  font-family: "Poppins", sans-serif;
+  background: linear-gradient(135deg, #4b0082, #6a0dad, #9370db);
+  color: white;
+  text-align: center;
+}
+#home-screen {
+  position: absolute;
+  top: 0; left: 0;
+  width: 100%; height: 100vh;
+  display: flex;
+  flex-direction: column;
+  justify-content: center;
+  align-items: center;
+  background: linear-gradient(135deg, #4b0082, #6a0dad, #9370db);
+  color: #fff;
+  z-index: 10;
+  transition: opacity 1s ease;
+}
+#home-screen img {
+  width: 300px; border-radius: 12px;
+  box-shadow: 0 6px 20px rgba(0,0,0,0.3);
+  margin-bottom: 20px;
+}
+#home-screen h1 { font-size: 2.5rem; margin: 10px 0; }
+#home-screen p { font-size: 1.2rem; max-width: 600px; margin-bottom: 30px; line-height: 1.4; }
+#start-btn {
+  padding: 15px 40px; font-size: 1.2rem; font-weight: bold;
+  color: white; background: #8537d8; border: none;
+  border-radius: 10px; cursor: pointer;
+  transition: background 0.3s, transform 0.1s;
+  box-shadow: 0 4px 8px rgba(0,0,0,0.2);
+}
+#start-btn:hover { background: #6a1bd3; transform: scale(1.05); }
+#voice-controls {
+  position: fixed; bottom: 20px; left: 50%; transform: translateX(-50%);
+  text-align: center; z-index: 5; display: none;
+}
+#speak-btn {
+  padding: 15px 30px; font-size: 1.2rem; font-weight: bold;
+  color: rgb(195, 166, 223); background-color: #8537d8;
+  border: none; border-radius: 8px; cursor: pointer;
+}
+#speak-btn.listening { background-color: #da6161; animation: pulse 1s infinite alternate; }
+@keyframes pulse { from { box-shadow: 0 0 0 0 rgba(215, 73, 63, 0.7); } to { box-shadow: 0 0 0 10px rgba(244,67,54,0); } }
+a-scene { display: none; }
+</style>
 </head>
+
 <body>
-  <!-- 🌄 HOME SCREEN -->
   <div id="home-screen">
     <img src="https://cdn.pixabay.com/photo/2016/11/29/03/53/mountain-1866510_1280.jpg" alt="Mountain" />
-    <h1>🎙️ Welcome to Your 3D World</h1>
-    <h3>Created by Aditi and Sarthak</h3>
-    <p>Speak to control your 3D environment — say “Show mountain,” “Show river,” or “Sky sunset.” Click below to begin your experience!</p>
+    <h1>🎙️ Day/Night Voice-Controlled VR</h1>
+    <p>Experience a dynamic 3D world! Use voice commands like: <b>"Start cycle," "Show mountain,"</b> or <b>"Show river"</b>.</p>
     <button id="start-btn">Start Experience</button>
   </div>
 
-  <!-- 🌍 VR SCENE -->
   <a-scene id="vr-scene">
     <a-sky id="sky" color="#87CEEB"></a-sky>
+    <a-entity position="0 1.6 0" camera look-controls><a-cursor color="#FFF"></a-cursor></a-entity>
 
-    <a-entity position="0 1.6 0" camera look-controls>
-      <a-cursor color="#FFF"></a-cursor>
+    <a-entity id="sun-orbit" day-night-cycle="enabled: false">
+      <a-sphere id="sun" radius="2.5" color="#FFD700" position="0 20 -40"
+        light="type: point; intensity: 1.8; color: #FFD700; castShadow: true;"></a-sphere>
     </a-entity>
 
-    <!-- Mountains as geometric shapes -->
-    <a-cone id="mountain" color="#556B2F" height="6" radius-bottom="4" position="0 3 -10" visible="false"></a-cone>
-    <a-cone color="#6B8E23" height="4" radius-bottom="3" position="4 2 -9" visible="false"></a-cone>
+    <a-plane id="ground" color="#228B22" width="60" height="60" rotation="-90 0 0" position="0 0 0"></a-plane>
+    <a-light id="scene-light" type="directional" intensity="0.8" position="0 10 5" castShadow="true"></a-light>
+    <a-light type="ambient" color="#ccc" intensity="0.1"></a-light>
 
-    <!-- River -->
-    <a-plane id="river" color="#4682B4" width="10" height="3" rotation="-90 0 0" position="0 0 -6" visible="false"></a-plane>
+    <a-entity id="mountain-range" position="0 0 -30" visible="false">
+      <a-cone color="#556B2F" height="12" radius-bottom="8" position="0 6 0"></a-cone>
+      <a-cone color="#6B8E23" height="7" radius-bottom="5" position="10 3.5 -5"></a-cone>
+      <a-cone color="#4F7942" height="9" radius-bottom="6" position="-12 4.5 3"></a-cone>
+    </a-entity>
 
-    <!-- Cube -->
-    <a-box id="cube" position="2 1 -5" rotation="0 45 0" color="#FF6347" visible="false"></a-box>
-
-    <!-- Lights -->
-    <a-light type="directional" intensity="0.8" position="1 2 3"></a-light>
-    <a-light type="ambient" color="#ccc"></a-light>
+    <a-entity id="river" curved-river visible="false" position="0 0.05 10"></a-entity>
   </a-scene>
 
-  <!-- 🎙️ VOICE CONTROLS -->
   <div id="voice-controls">
     <div id="status">Click “Speak” to start voice control.</div>
     <button id="speak-btn">SPEAK</button>
   </div>
 
-  <script>
-    // 🌄 START BUTTON LOGIC
-    const homeScreen = document.getElementById('home-screen');
-    const scene = document.getElementById('vr-scene');
-    const voiceControls = document.getElementById('voice-controls');
-    const startBtn = document.getElementById('start-btn');
+<script>
+// 🌄 START BUTTON LOGIC
+const homeScreen = document.getElementById('home-screen');
+const scene = document.getElementById('vr-scene');
+const voiceControls = document.getElementById('voice-controls');
+const startBtn = document.getElementById('start-btn');
+startBtn.addEventListener('click', () => {
+  homeScreen.style.opacity = '0';
+  setTimeout(() => {
+    homeScreen.style.display = 'none';
+    scene.style.display = 'block';
+    voiceControls.style.display = 'block';
+  }, 800);
+});
 
-    startBtn.addEventListener('click', () => {
-      homeScreen.style.opacity = '0';
-      setTimeout(() => {
-        homeScreen.style.display = 'none';
-        scene.style.display = 'block';
-        voiceControls.style.display = 'block';
-      }, 800);
-    });
+// 🎙️ VOICE LOGIC
+const mountainRange = document.querySelector('#mountain-range');
+const river = document.querySelector('#river');
+const sunOrbit = document.querySelector('#sun-orbit');
+const speakBtn = document.querySelector('#speak-btn');
+const statusDiv = document.querySelector('#status');
 
-    // 🎙️ VOICE RECOGNITION LOGIC
-    const mountain = document.querySelector('#mountain');
-    const river = document.querySelector('#river');
-    const cube = document.querySelector('#cube');
-    const sky = document.querySelector('#sky');
-    const speakBtn = document.querySelector('#speak-btn');
-    const statusDiv = document.querySelector('#status');
-
-    const SpeechRecognition = window.SpeechRecognition || window.webkitSpeechRecognition;
-    if (!SpeechRecognition) {
-      statusDiv.textContent = "Speech recognition not supported.";
-      speakBtn.disabled = true;
-    } else {
-      const recog = new SpeechRecognition();
-      recog.lang = 'en-US';
-      recog.continuous = true;
-
-      recog.onstart = () => {
-        speakBtn.classList.add('listening');
-        statusDiv.textContent = "Listening...";
-      };
-
-      recog.onend = () => {
-        speakBtn.classList.remove('listening');
-        statusDiv.textContent = "Stopped. Click again to listen.";
-      };
-
-      recog.onresult = e => {
-        const cmd = e.results[e.results.length - 1][0].transcript.toLowerCase().trim();
-        statusDiv.textContent = `Command: "${cmd}"`;
-
-        if (cmd.includes('show mountain')) mountain.setAttribute('visible', true);
-        else if (cmd.includes('hide mountain')) mountain.setAttribute('visible', false);
-        else if (cmd.includes('show river')) river.setAttribute('visible', true);
-        else if (cmd.includes('hide river')) river.setAttribute('visible', false);
-        else if (cmd.includes('so cute')) cube.setAttribute('visible', true);
-        else if (cmd.includes('disappear')) cube.setAttribute('visible', false);
-        else if (cmd.includes('sky sunset')) sky.setAttribute('color', '#FF4500');
-        else if (cmd.includes('sky day')) sky.setAttribute('color', '#87CEEB');
-        else if (cmd.includes('spin'))
-          cube.setAttribute('animation', 'property: rotation; to: 0 360 0; loop: true; dur: 4000; easing: linear');
-        else if (cmd.includes('stop spin')) cube.removeAttribute('animation');
-        else statusDiv.textContent = `Unknown command: "${cmd}"`;
-      };
-
-      let listening = false;
-      speakBtn.onclick = () => {
-        if (listening) { recog.stop(); listening = false; }
-        else { recog.start(); listening = true; }
-      };
-    }
-  </script>
+const SpeechRecognition = window.SpeechRecognition || window.webkitSpeechRecognition;
+if (!SpeechRecognition) {
+  statusDiv.textContent = "Speech recognition not supported in this browser.";
+  speakBtn.disabled = true;
+} else {
+  const recog = new SpeechRecognition();
+  recog.lang = 'en-US'; recog.continuous = true;
+  recog.onstart = () => { speakBtn.classList.add('listening'); statusDiv.textContent = "Listening..."; };
+  recog.onend = () => { speakBtn.classList.remove('listening'); statusDiv.textContent = "Stopped."; };
+  recog.onresult = e => {
+    const cmd = e.results[e.results.length - 1][0].transcript.toLowerCase().trim();
+    statusDiv.textContent = `Command: "${cmd}"`;
+    if (cmd.includes('show mountain')) mountainRange.setAttribute('visible', true);
+    else if (cmd.includes('hide mountain')) mountainRange.setAttribute('visible', false);
+    else if (cmd.includes('show river')) river.setAttribute('visible', true);
+    else if (cmd.includes('hide river')) river.setAttribute('visible', false);
+    else if (cmd.includes('start cycle')) { sunOrbit.setAttribute('day-night-cycle', 'enabled', true); statusDiv.textContent = "Cycle Started! ☀️🌑"; }
+    else if (cmd.includes('stop cycle')) { sunOrbit.setAttribute('day-night-cycle', 'enabled', false); statusDiv.textContent = "Cycle Stopped."; }
+    else statusDiv.textContent = `Unknown command: "${cmd}"`;
+  };
+  let listening = false;
+  speakBtn.onclick = () => { listening ? recog.stop() : recog.start(); listening = !listening; };
+}
+</script>
 </body>
-
 </html>
